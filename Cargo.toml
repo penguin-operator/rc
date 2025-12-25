@@ -1,0 +1,12 @@
+[package]
+name = "rc"
+version = "1.0.0"
+edition = "2024"
+
+[lib]
+name = "rc"
+path = "src/rc.rs"
+
+[[bin]]
+name = "rc"
+path = "src/rc.rs"
