@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 pub enum Token {
 	Symbol(String),
 	String(String),
@@ -53,13 +51,12 @@ pub enum Token {
 	Else,
 	While,
 	Break,
-	Continue,
+	Next,
 	Type,
+	Extends,
 	Struct,
 	Union,
 	Enum,
-	Extern,
-	Inline,
 }
 
 pub struct LexError {
@@ -68,65 +65,74 @@ pub struct LexError {
 	pub message: String,
 }
 
-pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
-	let mut tokens: Vec<Token> = Vec::new();
+pub fn tokenize(src: &str) -> Result<Vec<(Token, usize, usize)>, LexError> {
+	let mut tokens = Vec::new();
 	let mut chars = src.chars().peekable();
+	let mut line = 1;
+	let mut column = 1;
 	while let Some(&ch) = chars.peek() {
 		if ch.is_whitespace() || ch == '\n' || ch == '\r' {
+			if ch == '\n' {
+				line += 1;
+				column = 1;
+			} else {
+				column += 1;
+			}
 			chars.next();
 		} else if ch.is_alphabetic() || ch == '_' {
 			let mut symbol = String::new();
 			while let Some(&c) = chars.peek() {
 				if c.is_alphanumeric() || c == '_' {
 					symbol.push(c);
+					column += 1;
 					chars.next();
 				} else {
 					break;
 				}
 			}
 			if symbol == "end" {
-				tokens.push(Token::End);
+				tokens.push((Token::End, line, column));
 			} else if symbol == "from" {
-				tokens.push(Token::From);
+				tokens.push((Token::From, line, column));
 			} else if symbol == "import" {
-				tokens.push(Token::Import);
+				tokens.push((Token::Import, line, column));
 			} else if symbol == "fn" {
-				tokens.push(Token::Fn);
+				tokens.push((Token::Fn, line, column));
 			} else if symbol == "return" {
-				tokens.push(Token::Return);
+				tokens.push((Token::Return, line, column));
 			} else if symbol == "yield" {
-				tokens.push(Token::Yield);
+				tokens.push((Token::Yield, line, column));
 			} else if symbol == "if" {
-				tokens.push(Token::If);
+				tokens.push((Token::If, line, column));
 			} else if symbol == "elseif" {
-				tokens.push(Token::ElseIf);
+				tokens.push((Token::ElseIf, line, column));
 			} else if symbol == "else" {
-				tokens.push(Token::Else);
+				tokens.push((Token::Else, line, column));
 			} else if symbol == "while" {
-				tokens.push(Token::While);
+				tokens.push((Token::While, line, column));
 			} else if symbol == "break" {
-				tokens.push(Token::Break);
+				tokens.push((Token::Break, line, column));
 			} else if symbol == "continue" {
-				tokens.push(Token::Continue);
+				tokens.push((Token::Next, line, column));
 			} else if symbol == "type" {
-				tokens.push(Token::Type);
+				tokens.push((Token::Type, line, column));
+			} else if symbol == "extends" {
+				tokens.push((Token::Extends, line, column));
 			} else if symbol == "struct" {
-				tokens.push(Token::Struct);
+				tokens.push((Token::Struct, line, column));
 			} else if symbol == "union" {
-				tokens.push(Token::Union);
+				tokens.push((Token::Union, line, column));
 			} else if symbol == "enum" {
-				tokens.push(Token::Enum);
-			} else if symbol == "extern" {
-				tokens.push(Token::Extern);
-			} else if symbol == "inline" {
-				tokens.push(Token::Inline);
+				tokens.push((Token::Enum, line, column));
 			} else {
-				tokens.push(Token::Symbol(symbol));
+				tokens.push((Token::Symbol(symbol), line, column));
 			}
 		} else if ch == '\'' {
+			column += 1;
 			chars.next();
 			let mut char_str = String::new();
 			while let Some(&c) = chars.peek() {
+				column += 1;
 				if c != '\'' {
 					char_str.push(c);
 					chars.next();
@@ -134,12 +140,22 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
 					break;
 				}
 			}
+			column += 1;
 			chars.next();
-			tokens.push(Token::CharStr(char_str));
+			if chars.peek() == None {
+				return Err(LexError {
+					line,
+					column,
+					message: String::from("Unterminated string literal"),
+				});
+			}
+			tokens.push((Token::CharStr(char_str), line, column));
 		} else if ch == '"' {
+			column += 1;
 			chars.next();
 			let mut char_str = String::new();
 			while let Some(&c) = chars.peek() {
+				column += 1;
 				if c != '\"' {
 					char_str.push(c);
 					chars.next();
@@ -147,10 +163,18 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
 					break;
 				}
 			}
+			column += 1;
 			chars.next();
-			tokens.push(Token::String(char_str));
+			if chars.peek() == None {
+				return Err(LexError {
+					line,
+					column,
+					message: String::from("Unterminated string literal"),
+				});
+			}
+			tokens.push((Token::String(char_str), line, column));
 		} else if ch.is_numeric() {
-			let mut int_str = if *tokens.last().unwrap() == Token::Minus {
+			let mut int_str = if tokens.last().unwrap().0 == Token::Minus {
 				tokens.pop();
 				String::from("-")
 			} else {
@@ -161,14 +185,17 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
 			while let Some(&c) = chars.peek() {
 				if c.is_numeric() {
 					int_str.push(c);
+					column += 1;
 					chars.next();
 				} else if c == '.' {
+					column += 1;
 					chars.next();
 					is_float = true;
 					while let Some(&c2) = chars.peek() {
 						if c2.is_numeric() {
 							int_str.push(c2);
 							frac += 1;
+							column += 1;
 							chars.next();
 						} else {
 							break;
@@ -185,180 +212,204 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
 					int_value /= 10;
 					frac -= 1;
 				}
-				tokens.push(Token::Float(int_value, frac as usize));
+				tokens.push((Token::Float(int_value, frac as usize), line, column));
 			} else {
-				tokens.push(Token::Int(int_value));
+				tokens.push((Token::Int(int_value), line, column));
 			}
 		} else {
 			match ch {
 				';' => {
-					tokens.push(Token::Semicolon);
+					column += 1;
+					tokens.push((Token::Semicolon, line, column));
 					chars.next();
 				},
 				'(' => {
-					tokens.push(Token::OpenParen);
+					column += 1;
+					tokens.push((Token::OpenParen, line, column));
 					chars.next();
 				},
 				')' => {
-					tokens.push(Token::CloseParen);
+					column += 1;
+					tokens.push((Token::CloseParen, line, column));
 					chars.next();
 				},
 				'{' => {
-					tokens.push(Token::OpenBrace);
+					column += 1;
+					tokens.push((Token::OpenBrace, line, column));
 					chars.next();
 				},
 				'}' => {
-					tokens.push(Token::CloseBrace);
+					column += 1;
+					tokens.push((Token::CloseBrace, line, column));
 					chars.next();
 				},
 				'[' => {
-					tokens.push(Token::OpenBracket);
+					column += 1;
+					tokens.push((Token::OpenBracket, line, column));
 					chars.next();
 				},
 				']' => {
-					tokens.push(Token::CloseBracket);
+					column += 1;
+					tokens.push((Token::CloseBracket, line, column));
 					chars.next();
 				},
 				',' => {
-					tokens.push(Token::Comma);
+					column += 1;
+					tokens.push((Token::Comma, line, column));
 					chars.next();
 				},
 				'.' => {
-					tokens.push(Token::Dot);
+					column += 1;
+					tokens.push((Token::Dot, line, column));
 					chars.next();
 				},
 				'*' => {
-					tokens.push(Token::Star);
+					column += 1;
+					tokens.push((Token::Star, line, column));
 					chars.next();
 				},
 				'/' => {
-					tokens.push(Token::Slash);
+					column += 1;
+					tokens.push((Token::Slash, line, column));
 					chars.next();
 				},
 				'%' => {
-					tokens.push(Token::Percent);
+					column += 1;
+					tokens.push((Token::Percent, line, column));
 					chars.next();
 				},
 				'@' => {
-					tokens.push(Token::At);
+					column += 1;
+					tokens.push((Token::At, line, column));
 					chars.next();
 				},
 				':' => {
+					column += 1;
 					chars.next();
 					if let Some(&':') = chars.peek() {
-						tokens.push(Token::DoubleColon);
+						column += 1;
+						tokens.push((Token::DoubleColon, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Colon);
+						tokens.push((Token::Colon, line, column));
 					}
 				},
 				'!' => {
+					column += 1;
 					chars.next();
 					if let Some(&'=') = chars.peek() {
-						tokens.push(Token::BangEqual);
+						column += 1;
+						tokens.push((Token::BangEqual, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Bang);
+						tokens.push((Token::Bang, line, column));
 					}
 				},
 				'=' => {
+					column += 1;
 					chars.next();
 					if let Some(&'=') = chars.peek() {
-						tokens.push(Token::DoubleEqual);
+						column += 1;
+						tokens.push((Token::DoubleEqual, line, column));
 						chars.next();
 					} else if let Some(&'>') = chars.peek() {
-						tokens.push(Token::EqualArrow);
+						column += 1;
+						tokens.push((Token::EqualArrow, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Equal);
+						tokens.push((Token::Equal, line, column));
 					}
 				},
 				'<' => {
+					column += 1;
 					chars.next();
 					if let Some(&'=') = chars.peek() {
-						tokens.push(Token::LessEqual);
+						column += 1;
+						tokens.push((Token::LessEqual, line, column));
 						chars.next();
 					} else if let Some(&'<') = chars.peek() {
-						tokens.push(Token::LeftShift);
+						column += 1;
+						tokens.push((Token::LeftShift, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Less);
+						tokens.push((Token::Less, line, column));
 					}
 				},
 				'>' => {
+					column += 1;
 					chars.next();
 					if let Some(&'=') = chars.peek() {
-						tokens.push(Token::GreaterEqual);
+						column += 1;
+						tokens.push((Token::GreaterEqual, line, column));
 						chars.next();
 					} else if let Some(&'>') = chars.peek() {
-						tokens.push(Token::RightShift);
+						column += 1;
+						tokens.push((Token::RightShift, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Greater);
+						tokens.push((Token::Greater, line, column));
 					}
 				},
 				'+' => {
+					column += 1;
 					chars.next();
 					if let Some(&'+') = chars.peek() {
-						tokens.push(Token::PlusPlus);
+						column += 1;
+						tokens.push((Token::PlusPlus, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Plus);
+						tokens.push((Token::Plus, line, column));
 					}
 				},
 				'-' => {
+					column += 1;
 					chars.next();
 					if let Some(&'-') = chars.peek() {
-						tokens.push(Token::MinusMinus);
+						column += 1;
+						tokens.push((Token::MinusMinus, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Minus);
+						tokens.push((Token::Minus, line, column));
 					}
 				},
 				'&' => {
+					column += 1;
 					chars.next();
 					if let Some(&'&') = chars.peek() {
-						tokens.push(Token::DoubleAmpersand);
+						column += 1;
+						tokens.push((Token::DoubleAmpersand, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Ampersand);
+						tokens.push((Token::Ampersand, line, column));
 					}
 				},
 				'|' => {
+					column += 1;
 					chars.next();
 					if let Some(&'|') = chars.peek() {
-						tokens.push(Token::DoublePipe);
+						column += 1;
+						tokens.push((Token::DoublePipe, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Pipe);
+						tokens.push((Token::Pipe, line, column));
 					}
 				},
 				'^' => {
+					column += 1;
 					chars.next();
 					if let Some(&'^') = chars.peek() {
-						tokens.push(Token::DoubleHat);
+						column += 1;
+						tokens.push((Token::DoubleHat, line, column));
 						chars.next();
 					} else {
-						tokens.push(Token::Hat);
+						tokens.push((Token::Hat, line, column));
 					}
 				},
-				_ => {
-					let mut line = 1;
-					let mut column = 1;
-					for c in src.chars() {
-						if c == '\n' {
-							line += 1;
-							column = 1;
-						} else {
-							column += 1;
-						}
-					}
-					return Err(LexError {
-						line,
-						column,
-						message: format!("Unexpected character: {}", ch),
-					});
-				},
+				_ => return Err(LexError {
+					line,
+					column,
+					message: format!("Unexpected character: {}", ch),
+				}),
 				
 			}
 		}
@@ -366,7 +417,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
 	Ok(tokens)
 }
 
-impl Debug for Token {
+impl std::fmt::Debug for Token {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Token::Symbol(s) => write!(f, "{}", s),
@@ -429,13 +480,12 @@ impl Debug for Token {
 			Token::Else => write!(f, "else"),
 			Token::While => write!(f, "while"),
 			Token::Break => write!(f, "break"),
-			Token::Continue => write!(f, "continue"),
+			Token::Next => write!(f, "continue"),
 			Token::Type => write!(f, "type"),
+			Token::Extends => write!(f, "extends"),
 			Token::Struct => write!(f, "struct"),
 			Token::Union => write!(f, "union"),
 			Token::Enum => write!(f, "enum"),
-			Token::Extern => write!(f, "extern"),
-			Token::Inline => write!(f, "inline"),
 		}
 	}
 }
@@ -495,13 +545,12 @@ impl core::cmp::PartialEq for Token {
 			(Token::Else, Token::Else) => true,
 			(Token::While, Token::While) => true,
 			(Token::Break, Token::Break) => true,
-			(Token::Continue, Token::Continue) => true,
+			(Token::Next, Token::Next) => true,
 			(Token::Type, Token::Type) => true,
+			(Token::Extends, Token::Extends) => true,
 			(Token::Struct, Token::Struct) => true,
 			(Token::Union, Token::Union) => true,
 			(Token::Enum, Token::Enum) => true,
-			(Token::Extern, Token::Extern) => true,
-			(Token::Inline, Token::Inline) => true,
 			_ => false,
 		}
 	}

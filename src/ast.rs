@@ -18,29 +18,27 @@ pub struct Type {
 }
 
 pub enum TypeDef {
-	Alias { alias: Box<Type> },
-	Fn { args: Vec<Symbol>, vararg: Option<Box<Symbol>>, rets: Option<Box<Type>> },
-	Pointer { pointee: Box<Type> },
-	Struct { extends: Option<Box<Type>>, fields: Vec<Symbol> },
-	Union { extends: Option<Box<Type>>, fields: Vec<Symbol> },
-	Enum { extends: Option<Box<Type>>, fields: Vec<Symbol> },
-	U8, U16, U32, U64, U128, Int,
-	I8, I16, I32, I64, I128, Uint,
-	F16, F32, F64, F128, Float,
+	Extends { base: Box<Type>, def: Option<Box<TypeDef>>, },
+	Sized { size: usize, },
+	Fn { args: Vec<Symbol>, vararg: Option<Box<Symbol>>, rets: Option<Box<Type>>, },
+	Pointer { pointee: Box<Type>, },
+	Struct { fields: Vec<Symbol>, },
+	Union { fields: Vec<Symbol>, },
+	Enum { fields: Vec<Symbol>, },
 }
 
 pub enum Expr {
-	TypeConv(Box<Expr>, Box<Type>),
 	Comptime(Box<Expr>),
 	Symbol(String),
 	Int(isize),
-	Float(isize, isize),
+	Float(isize, usize),
 	UnOp(UnOp, Box<Expr>),
 	BinOp(Box<Expr>, BinOp, Box<Expr>),
+	TypeConv(Box<Expr>, Box<Type>),
 	Index(Box<Expr>, Box<Expr>),
 	Field(Box<Expr>, String),
 	Call(Box<Expr>, Vec<Expr>, Option<Box<Expr>>),
-	Lambda(Vec<(Option<Type>, String)>, Option<Type>, Vec<Instruction>),
+	FnBody(Vec<(Option<Type>, String)>, Option<Type>, Vec<Instruction>),
 	Struct(Option<Box<Type>>, Vec<(Option<String>, Expr)>),
 	Array(Vec<Expr>),
 	Deref(Box<Symbol>),
@@ -56,7 +54,6 @@ pub enum UnOp {
 }
 
 pub enum BinOp {
-	Assign(Box<BinOp>, Box<Expr>),
 	Add, Sub, Mul, Div, Mod,
 	And, Or, Xor, BitAnd, BitOr, BitXor,
 	Eq, Neq, Less, LessEq, Greater, GreaterEq,
@@ -65,5 +62,15 @@ pub enum BinOp {
 
 pub enum Instruction {
 	Comptime(Box<Instruction>),
-	
+	Next,
+	Break,
+	Return(Option<Expr>),
+	VarDecl(Type, String),
+	Assign(Vec<String>, Expr),
+	If(Expr, Vec<Instruction>),
+	ElseIf(Expr, Vec<Instruction>),
+	Else(Vec<Instruction>),
+	While(Expr, Vec<Instruction>),
 }
+
+
